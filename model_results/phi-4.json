@@ -1,0 +1,21 @@
+[
+  {
+    "model": "Phi-4",
+    "evaluations": [
+      {
+        "prompt_type": "feature_creation",
+        "error": "'CodeAssistant' object has no attribute 'pipe'"
+      },
+      {
+        "prompt_type": "bug_fix",
+        "error": "'CodeAssistant' object has no attribute 'pipe'"
+      },
+      {
+        "prompt_type": "feature_plan",
+        "error": "'CodeAssistant' object has no attribute 'pipe'"
+      }
+    ],
+    "average_latency": 0.0,
+    "total_vram": 8.597885608673096
+  }
+]
