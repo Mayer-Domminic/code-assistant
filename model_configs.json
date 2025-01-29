@@ -13,8 +13,7 @@
         "max_new_tokens": 1024,
         "gpu_priority": true,
         "flash_attention": false,
-        "device_map": "auto",
-        "max_memory": {"0": "10GiB"}
+        "device_map": "auto"
     },
     "DeepSeek-R1-8B": {
         "model_id": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
@@ -42,10 +41,8 @@
         "max_new_tokens": 2048,
         "gpu_priority": true,
         "flash_attention": false,
-        "device_map": "sequential",
         "offload_folder": "offload",
-        "low_cpu_mem_usage": true,
-        "max_memory": {"0": "10GiB", "cpu": "30GiB"}
+        "low_cpu_mem_usage": true
     },
 
 
@@ -58,7 +55,6 @@
         "max_new_tokens": 2048,
         "gpu_priority": true,
         "flash_attention": true,
-        "device_map": "sequential",
         "offload_folder": "offload",
         "low_cpu_mem_usage": true
     },

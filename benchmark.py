@@ -69,8 +69,9 @@ class CodeAssistant:
 # ==================
 
 def run_benchmark(models_to_test):
-    dataset = load_dataset("bigcode/bigcodebench", split="train")
-    test_samples = dataset.select(range(10))
+    # Load dataset with correct split version
+    dataset = load_dataset("bigcode/bigcodebench", split="v0.1.3")
+    test_samples = dataset.select(range(10))  # First 10 samples
     results = []
     
     print("\n🚀 Starting benchmark process...")
@@ -79,63 +80,59 @@ def run_benchmark(models_to_test):
         print(f"\n🔧 Initializing {model_name}...")
         try:
             assistant = CodeAssistant(model_name)
-            print(f"✅ {model_name} loaded successfully | VRAM: {torch.cuda.memory_allocated()/1024**3:.2f}GB")
+            print(f"✅ {model_name} loaded | VRAM: {torch.cuda.memory_allocated()/1024**3:.2f}GB")
         except Exception as e:
-            print(f"❌ Failed to load {model_name}: {str(e)}")
+            print(f"❌ Load failed: {str(e)}")
             continue
 
         model_results = {
             "model": model_name,
-            "evaluations": [],
+            "dataset_evaluations": [],
             "average_latency": 0,
-            "total_vram": torch.cuda.max_memory_allocated() / (1024 ** 3)
+            "max_vram": torch.cuda.max_memory_allocated() / (1024 ** 3)
         }
         
         total_latency = 0
+        evaluator = DeepSeekEvaluator()  # Initialize quality evaluator
         
-        # Test all prompt types with individual tracking
-        for prompt_name, prompt_template in PROMPTS.items():
-            print(f"\n📝 Generating {prompt_name} prompt for {model_name}...")
-            
-            try:
-                test_prompt = prompt_template.format(
-                    feature="user authentication system",
-                    requirements="JWT-based, rate limiting, OAuth2 support",
-                    examples="Input: valid credentials\nOutput: access token",
-                    code="def divide(a, b): return a / b",
-                    error="ZeroDivisionError",
-                    constraints="Must use PostgreSQL and Redis"
-                )
-                
-                print("⚡ Generating response...")
-                response, latency = assistant.generate(test_prompt)
-                total_latency += latency
-                
-                tokens = len(assistant.tokenizer.encode(response))
-                print(f"✅ Generated {tokens} tokens in {latency:.2f}s")
-                
-                model_results["evaluations"].append({
-                    "prompt_type": prompt_name,
-                    "response": response,
-                    "latency": latency,
-                    "tokens_generated": tokens
-                })
-                
-            except Exception as e:
-                print(f"❌ Error processing {prompt_name}: {str(e)}")
-                model_results["evaluations"].append({
-                    "prompt_type": prompt_name,
-                    "error": str(e)
-                })
-        
-        model_results["average_latency"] = total_latency / len(PROMPTS) if len(PROMPTS) > 0 else 0
+        # Evaluate on dataset prompts
+        for sample in tqdm(test_samples, desc=f"Testing {model_name}"):
+            for prompt_type in ["complete_prompt", "instruct_prompt"]:
+                try:
+                    # Get actual dataset prompt
+                    test_prompt = sample[prompt_type]
+                    
+                    # Generate response
+                    start_time = perf_counter()
+                    response, latency = assistant.generate(test_prompt)
+                    total_latency += latency
+                    
+                    # Evaluate response quality
+                    evaluation = evaluator.evaluate_response(response)
+                    
+                    model_results["dataset_evaluations"].append({
+                        "task_id": sample["task_id"],
+                        "prompt_type": prompt_type,
+                        "response": response,
+                        "evaluation": evaluation,
+                        "latency": latency,
+                        "tokens_generated": len(assistant.tokenizer.encode(response))
+                    })
+                    
+                except Exception as e:
+                    print(f"❌ Error in {prompt_type}: {str(e)}")
+                    model_results["dataset_evaluations"].append({
+                        "task_id": sample["task_id"],
+                        "prompt_type": prompt_type,
+                        "error": str(e)
+                    })
+
+        model_results["average_latency"] = total_latency / (len(test_samples)*2)  # 2 prompts per sample
         results.append(model_results)
-        print(f"\n🏁 Completed {model_name} | Avg latency: {model_results['average_latency']:.2f}s")
         
-        # Cleanup memory
+        # Cleanup
         del assistant
         torch.cuda.empty_cache()
-        print(f"🧹 Cleaned up {model_name} resources")
     
     return results
 
@@ -148,9 +145,15 @@ class DeepSeekEvaluator:
         self.evaluator = pipeline(
             task="text-generation",
             model="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+            local_dir= "models/DeepSeek-R1-Qwen-14B",
             device_map="auto",
             torch_dtype=torch.float16,
-            model_kwargs={"load_in_4bit": True}
+            model_kwargs={
+                "load_in_4bit": True,
+                "device_map": "sequential",
+                "offload_folder": "offload",
+                "max_memory": {"0": "10GiB", "cpu": "30GiB"}
+            }
         )
     
     def evaluate_response(self, response):
@@ -176,15 +179,6 @@ class DeepSeekEvaluator:
 if __name__ == "__main__":
     selected_models = ["DeepSeek-Coder-V2-Lite"]
     print("🔨 Starting benchmark setup for: ", selected_models)
-    for model in selected_models:
-        config = MODEL_CONFIGS[model]
-        snapshot_download(
-            repo_id=config["model_id"],
-            local_dir=config["local_dir"],
-            max_workers=4,
-            force_download=True,  # Add this
-            resume_download=False  # Add this
-        )
     
     # Select models to benchmark
     print(f"🔍 Selected models: {', '.join(selected_models)}")
